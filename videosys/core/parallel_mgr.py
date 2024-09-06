@@ -8,6 +8,8 @@ from torch.distributed import ProcessGroup
 from videosys.utils.logging import init_dist_logger, logger
 from videosys.utils.utils import set_seed
 
+import tools
+
 PARALLEL_MANAGER = None
 
 
@@ -92,8 +94,10 @@ def initialize(
             dist.destroy_process_group()
         except Exception:
             pass
+        tools.stage_log("Dist.Init_Process_Group")
         dist.init_process_group(backend="nccl", init_method=init_method, world_size=world_size, rank=rank)
         torch.cuda.set_device(rank)
+        tools.print_rank_all(f"Real rank {rank} initialized. Current Device: {torch.cuda.current_device()}")
         init_dist_logger()
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True

@@ -7,7 +7,7 @@ import torch
 import videosys
 
 from .mp_utils import ProcessWorkerWrapper, ResultHandler, WorkerMonitor, get_distributed_init_method, get_open_port
-
+import tools
 
 class VideoSysEngine:
     """
@@ -15,12 +15,17 @@ class VideoSysEngine:
     """
 
     def __init__(self, config):
-        self.config = config
-        self.parallel_worker_tasks = None
+        self.config = config # config = LatteConfig(model_id, num_gpus)
+        self.parallel_worker_tasks = None # No use? 
         self._init_worker(config.pipeline_cls)
 
     def _init_worker(self, pipeline_cls):
+        
+        tools.stage_log("Init Workers")
+
         world_size = self.config.num_gpus
+
+        tools.print_rank_0(f"World_size: {world_size}")
 
         if "CUDA_VISIBLE_DEVICES" not in os.environ:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(world_size))
@@ -37,14 +42,20 @@ class VideoSysEngine:
         assert world_size <= torch.cuda.device_count()
 
         # change addr for multi-node
-        distributed_init_method = get_distributed_init_method("127.0.0.1", get_open_port())
+        distributed_init_method = get_distributed_init_method("127.0.0.1", get_open_port()) # "tcp://[{ip}]:{port}"
 
         if world_size == 1:
             self.workers = []
             self.worker_monitor = None
         else:
             result_handler = ResultHandler()
+
+            # 使用列表推导式创建 worldsize-1个进程，每个进程都是ProcessWorkerWrapper的实例。
+            # 主进程并不包含在此（Rank=0）
+
+            tools.stage_log("Create Workers")
             self.workers = [
+                # 在此处会启动一个工作进程
                 ProcessWorkerWrapper(
                     result_handler,
                     partial(
@@ -57,17 +68,19 @@ class VideoSysEngine:
                 )
                 for rank in range(1, world_size)
             ]
+            tools.print_rank_all(f"{len(self.workers)} workers created!")
 
-            self.worker_monitor = WorkerMonitor(self.workers, result_handler)
+            self.worker_monitor = WorkerMonitor(self.workers, result_handler) # 监控工作进程的状态
             result_handler.start()
             self.worker_monitor.start()
 
         self.driver_worker = self._create_pipeline(
             pipeline_cls=pipeline_cls, distributed_init_method=distributed_init_method
-        )
+        ) # 驱动进程 rank0 没毛病
 
     # TODO: add more options here for pipeline, or wrap all options into config
     def _create_pipeline(self, pipeline_cls, rank=0, local_rank=0, distributed_init_method=None):
+        # set sequence parallel dimension here, or default to be GPU_NUM
         videosys.initialize(rank=rank, world_size=self.config.num_gpus, init_method=distributed_init_method, seed=42)
 
         pipeline = pipeline_cls(self.config)

@@ -32,7 +32,7 @@ logger = create_logger()
 def get_distributed_init_method(ip: str, port: int) -> str:
     # Brackets are not permitted in ipv4 addresses,
     # see https://github.com/python/cpython/issues/103848
-    return f"tcp://[{ip}]:{port}" if ":" in ip else f"tcp://{ip}:{port}"
+    return f"tcp://[{ip}]:{port}" if ":" in ip else f"tcp://{ip}:{port}" # ipv6还是ipv4地址
 
 
 def get_open_port() -> int:
@@ -112,14 +112,15 @@ class WorkerMonitor(threading.Thread):
     """Monitor worker status (in background thread)"""
 
     def __init__(self, workers: List["ProcessWorkerWrapper"], result_handler: ResultHandler):
-        super().__init__(daemon=True)
+        super().__init__(daemon=True) # daemon=True 表示这是一个守护线程，主程序退出时它会自动退出
         self.workers = workers
         self.result_handler = result_handler
         self._close = False
 
     def run(self) -> None:
+        # 异常退出处理
         # Blocks until any worker exits
-        dead_sentinels = wait([w.process.sentinel for w in self.workers])
+        dead_sentinels = wait([w.process.sentinel for w in self.workers]) # sentinel用于进程同步，监控任何进程退出 
         if not self._close:
             self._close = True
 
